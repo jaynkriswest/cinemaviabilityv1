@@ -1,72 +1,103 @@
 import streamlit as st
+from datetime import date
 from formula import calculate_predictability
 from api_handler import get_talent_metrics 
 
+# --- CONFIGURATION & UI THEME ---
+st.set_page_config(page_title="Cinema Predictability Engine v3i", layout="wide")
+
 # --- LOGIN BYPASS FOR TESTING ---
-# We are forcing auth to True so you skip the login screen
 if 'auth' not in st.session_state:
     st.session_state.auth = True 
 
-# --- MAIN DASHBOARD ---
-# This now runs automatically without asking for email/password
-st.sidebar.title("Testing: Film Parameters")
+# --- MAIN INTERFACE ---
+st.title("🎬 Cinema Viability & ROI Predictor")
+st.markdown("---")
 
-# PILLAR 1: TALENT (Automated via TMDB)
-st.sidebar.subheader("Talent Analysis")
-talent_name = st.sidebar.text_input("Lead Actor/Director Name", "Chiranjeevi")
+# Use Columns to separate inputs from the results dashboard
+col_input, col_display = st.columns([1, 2], gap="large")
 
-# Fetch real data using your api_handler
-total_credits, years_exp = get_talent_metrics(talent_name)
+with col_input:
+    st.header("Project Blueprint")
+    
+    # 1. TALENT PILLAR (Searchable)
+    talent_name = st.text_input("Lead Talent (Actor/Director)", value="Chiranjeevi", help="Linked to TMDB Real-time Data")
+    total_credits, years_exp = get_talent_metrics(talent_name)
+    
+    # Logic to auto-assign Talent Score based on v3i Tiers
+    if total_credits >= 200 or years_exp >= 25:
+        talent_tier, talent_score = "Ultra-Veteran", 95
+    elif years_exp >= 10:
+        talent_tier, talent_score = "Superstar", 85
+    else:
+        talent_tier, talent_score = "Rising Star", 65
+    
+    st.info(f"Analysis: {talent_tier} | {years_exp} Years Experience")
 
-# Automated Tier Logic
-if total_credits >= 200 or years_exp >= 25:
-    talent_tier = "Ultra-Veteran"
-    talent_score = 95
-elif years_exp >= 10:
-    talent_tier = "Superstar"
-    talent_score = 85
-else:
-    talent_tier = "Rising Star"
-    talent_score = 65
+    # 2. FINANCIALS & SCALE (Replacing Market Sliders)
+    st.subheader("Financial Scale")
+    budget = st.number_input("Production Budget (in Crores)", min_value=1, value=50)
+    market_reach = st.selectbox("Distribution Strategy", 
+                                ["Limited (Single State)", "Standard (South India)", "Pan-India", "Global Release"])
+    
+    # Internal mapping for Market Score
+    market_map = {"Limited (Single State)": 65, "Standard (South India)": 80, "Pan-India": 90, "Global Release": 100}
+    market_score = market_map[market_reach]
 
-st.sidebar.info(f"Tier: {talent_tier} | {years_exp} Yrs Exp")
+    # 3. CONTENT & REMAKE LOGIC (Addressing the Remake Paradox)
+    st.subheader("Script & Execution")
+    genre = st.selectbox("Primary Genre", ["Mass Action", "Social Drama", "Thriller", "Romance", "Remake/Adaptation"])
+    
+    script_strength = st.selectbox("Script/Source Material Confidence", 
+                                   ["Original - High Risk", "Original - High Potential", "Proven Source (Remake/Novel)"])
+    # Logic: Remakes start with higher base reliability but lower viral 'freshness'
+    content_score = 90 if script_strength == "Proven Source (Remake/Novel)" else 75
 
-# PILLAR 2 & 3: MARKET & CONTENT
-st.sidebar.subheader("Market & Script")
-market_score = st.sidebar.slider("Market Score (Screens/Reach)", 0, 100, 80)
-content_score = st.sidebar.slider("Content Quality (Script/Tech)", 0, 100, 85)
+    # 4. SCHEDULING (Calendar Picker)
+    st.subheader("Release Scheduling")
+    release_date = st.date_input("Target Release Date", value=None, help="Select a date to calculate Seasonal Timing")
+    
+    if release_date:
+        # Simple logic: Festivals like Sankranti (Jan) or Diwali (Oct/Nov) boost scores[cite: 1]
+        month = release_date.month
+        if month in [1, 4, 10, 12]: # Festive/Holiday months
+            seasonal_score = 100
+        else:
+            seasonal_score = 75
+    else:
+        seasonal_score = 75 # Neutral score if no date is picked
 
-# PILLAR 4 & 5: VIRAL & SEASONAL
-st.sidebar.subheader("Digital & Timing")
-viral_score = st.sidebar.slider("Viral Momentum (Digital Hype)", 0, 100, 75)
-seasonal_score = st.sidebar.select_slider("Seasonal Timing", 
-                                         options=[60, 75, 85, 100], 
-                                         value=85)
+    # 5. MULTIPLIERS
+    st.subheader("Global Multipliers")
+    censor = st.radio("Target Censor Rating", ["U", "UA", "A"], horizontal=True)
+    m_cert = 1.2 if censor == "U" else (0.7 if censor == "A" else 1.0)
+    
+    m_align = st.select_slider("Marketing & Promo Alignment", options=[0.8, 0.85, 0.9, 0.95, 1.0], value=1.0)
 
-# GLOBAL MULTIPLIERS[cite: 1]
-st.sidebar.subheader("Global Modifiers")
-censor = st.sidebar.selectbox("Censor Rating", ["U (1.2x)", "UA (1.0x)", "A (0.7x)"])
-m_cert = 1.2 if "U " in censor else (0.7 if "A " in censor else 1.0)
-m_align = st.sidebar.slider("Marketing Alignment", 0.8, 1.0, 1.0)
-
-# ENGINE CALCULATION[cite: 1]
-result = calculate_predictability(
-    talent_score, market_score, content_score, viral_score, seasonal_score, m_cert, m_align
-)
-
-# MAIN DISPLAY[cite: 1]
-st.title("Predictability Test Bench")
-col1, col2 = st.columns(2)
-with col1:
-    st.metric("Predictability Score", f"{result}%")
-with col2:
-    st.metric("Detected Tier", talent_tier)
-
-st.progress(result / 100)
-
-if result >= 85:
-    st.success("High Viability: Strong festive potential.")
-elif result >= 70:
-    st.info("Moderate Viability: Performance depends on WOM.")
-else:
-    st.warning("High Risk: Strategy pivot recommended.")
+with col_display:
+    st.header("Viability Analysis")
+    
+    # CALCULATE
+    raw_result = calculate_predictability(talent_score, market_score, content_score, 80, seasonal_score, m_cert, m_align)
+    result = min(raw_result, 98.0) # Realism Cap[cite: 1]
+    
+    # METRICS DISPLAY
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Predictability", f"{result}%")
+    m2.metric("Market Tier", market_reach)
+    m3.metric("Project Type", genre)
+    
+    st.progress(result / 100)
+    
+    # DYNAMIC STRATEGY GENERATOR
+    st.markdown("### Executive Strategy")
+    if genre == "Remake/Adaptation" and talent_tier != "Ultra-Veteran":
+        st.warning("**Risk Alert:** Remakes with non-veteran leads require 20% higher marketing spend to overcome 'Comparison Fatigue'.")
+    
+    if budget > 100 and market_reach != "Pan-India":
+        st.error("**Financial Mismatch:** Heavyweight budgets (>100Cr) are highly unpredictable without Pan-India distribution reach.")
+    
+    if result >= 90:
+        st.success("**Greenlight Recommended:** Strong stability metrics across all pillars.")
+    else:
+        st.info("**Optimization Required:** Consider shifting release to a festive window to improve Seasonal Score.")
